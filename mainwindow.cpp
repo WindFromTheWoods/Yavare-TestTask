@@ -11,10 +11,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     QWidget::setWindowTitle("Zheludchenko Test Task");
 
-    screenshotButton = new QPushButton("Сделать скриншот", this);
+    screenshotButton = new QPushButton("Зробити знімок екрану", this);
     connect(screenshotButton, &QPushButton::clicked, this, &MainWindow::onScreenshotButtonClicked);
 
-    timerToggleButton = new QPushButton("Включить таймер", this);
+    timerToggleButton = new QPushButton("Увімкнути таймер", this);
     connect(timerToggleButton, &QPushButton::clicked, this, &MainWindow::onTimerToggleClicked);
 
     currentScreenshotLabel = new QLabel(this);
@@ -23,12 +23,12 @@ MainWindow::MainWindow(QWidget *parent)
     previousScreenshotLabel = new QLabel(this);
     previousScreenshotLabel->setAlignment(Qt::AlignCenter);
 
-    similarityLabel = new QLabel("Сделайте два скриншота для расчета их сходства", this);
+    similarityLabel = new QLabel("Зробіть два знімки екрану для розрахунку їх схожості", this);
     similarityLabel->setAlignment(Qt::AlignCenter);
 
-    currentScreenshotTitleLabel = new QLabel("Текущий скриншот", this);
+    currentScreenshotTitleLabel = new QLabel("Поточний знімок екрану", this);
     currentScreenshotTitleLabel->setAlignment(Qt::AlignCenter);
-    previousScreenshotTitleLabel = new QLabel("Прошлый скриншот", this);
+    previousScreenshotTitleLabel = new QLabel("Попередній знімок екрану", this);
     previousScreenshotTitleLabel->setAlignment(Qt::AlignCenter);
 
 
@@ -65,13 +65,13 @@ void MainWindow::onTimerToggleClicked()
     if (isTimerRunning)
     {
         timer->stop();
-        timerToggleButton->setText("Включить таймер");
+        timerToggleButton->setText("Увімкнути таймер");
         isTimerRunning = false;
     }
     else
     {
         timer->start(60000);
-        timerToggleButton->setText("Выключить таймер");
+        timerToggleButton->setText("Вимкнути таймер");
         isTimerRunning = true;
     }
 }
@@ -93,7 +93,7 @@ void MainWindow::takeScreenshoot()
             emit startScreenshotComparison(previousScreenshotPixmap, newScreenshot);
         }
         else
-            similarityLabel->setText("Сделайте еще один скриншот");
+            similarityLabel->setText("Зробіть ще один знімок екрану");
 
         // Отображаем текущий и предыдущий скриншоты
         currentScreenshotLabel->setPixmap(newScreenshot.scaled(currentScreenshotLabel->size(), Qt::KeepAspectRatio));
@@ -104,7 +104,7 @@ void MainWindow::takeScreenshoot()
         saveScreenshotToDatabase(newScreenshot, similarity);
     }
     else    // Если не удалось захватить экран
-        QMessageBox::critical(this, "Ошибка", "Не удалось захватить экран.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося захопити екран.");
 }
 
 // Функция расчета разницы между скриншотами
@@ -147,7 +147,7 @@ double MainWindow::calculateImageDiff(const QImage &image1, const QImage &image2
 
 void MainWindow::onComparisonResult(double similarity)
 {
-    QString similarityText = QString("Сходство: %1%").arg(similarity, 0, 'f', 2);
+    QString similarityText = QString("Схожість: %1%").arg(similarity, 0, 'f', 2);
     similarityLabel->setText(similarityText);
 }
 
@@ -159,7 +159,7 @@ void MainWindow::createDatabaseTable()
 
     if (!db.open())
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось открыть базу данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося відкрити базу даних.");
         return;
     }
 
@@ -172,13 +172,13 @@ void MainWindow::createDatabaseTable()
                                "similarity_percentage REAL NOT NULL)";
     if (!query.exec(createTableQuery))
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось создать таблицу в базе данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося створити таблицю в базі даних.");
         return;
     }
 
     db.close();
 
-    qDebug() << "Путь к базе данных:" << db.databaseName();
+    qDebug() << "Путь до бази даних:" << db.databaseName();
 }
 
 void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double similarityPercentage)
@@ -197,7 +197,7 @@ void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double simi
     QSqlDatabase db = QSqlDatabase::database();
     if (!db.isOpen())
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось открыть базу данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося відкрити базу даних.");
         return;
     }
 
@@ -209,7 +209,7 @@ void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double simi
 
     if (!query.exec())
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось добавить данные в базу данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося додати дані в базу даних.");
     }
     else
     {
@@ -217,13 +217,16 @@ void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double simi
         query.prepare("DELETE FROM screenshots WHERE id NOT IN (SELECT id FROM screenshots ORDER BY id DESC LIMIT 2)");
         if (!query.exec())
         {
-            QMessageBox::critical(this, "Ошибка", "Не удалось удалить старые данные из базы данных.");
+            QMessageBox::critical(this, "Помилка", "Не вдалося видалити старі дані з бази даних.");
         }
     }
 }
 
 QByteArray MainWindow::calculateImageHash(const QPixmap &screenshot)
 {
+    if(screenshot.isNull())
+        return 0;
+
     QByteArray byteArray;
     QBuffer buffer(&byteArray);
     buffer.open(QIODevice::WriteOnly);
@@ -240,7 +243,7 @@ void MainWindow::loadScreenshotsFromDatabase()
     QSqlDatabase db = QSqlDatabase::database();
     if (!db.isOpen())
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось открыть базу данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося відкрити базу даних.");
         return;
     }
 
@@ -248,7 +251,7 @@ void MainWindow::loadScreenshotsFromDatabase()
     query.prepare("SELECT image FROM screenshots ORDER BY id DESC LIMIT 2");
     if (!query.exec())
     {
-        QMessageBox::critical(this, "Ошибка", "Не удалось выполнить запрос к базе данных.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося виконати запит до бази даних.");
         return;
     }
 
@@ -280,12 +283,12 @@ void MainWindow::loadScreenshotsFromDatabase()
     // Отображаем процент сходства текущего скриншота
     if (screenshotCount == 1)
     {
-        similarityLabel->setText("Прошлого скриншота пока нет");
+        similarityLabel->setText("Прошлого скріншота поки що немає");
     }
     else if (screenshotCount == 2)
     {
         double similarity = calculateImageDiff(previousScreenshot.toImage(), currentScreenshot.toImage());
-        QString similarityText = QString("Сходство: %1%").arg(similarity, 0, 'f', 2);
+        QString similarityText = QString("Схожість: %1%").arg(similarity, 0, 'f', 2);
         similarityLabel->setText(similarityText);
     }
 }

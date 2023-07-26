@@ -56,7 +56,6 @@ private:
     QPixmap screenshotPixmap = QPixmap();
     QLabel *currentScreenshotTitleLabel; // Метка для надписи "Текущий скриншот"
     QLabel *previousScreenshotTitleLabel; // Метка для надписи "Прошлый скриншот"
-    void compareScreenshotsAsync(const QPixmap &previousScreenshot, const QPixmap &currentScreenshot);
     ScreenshotWorker screenshotWorker;
     QThread workerThread;
 
