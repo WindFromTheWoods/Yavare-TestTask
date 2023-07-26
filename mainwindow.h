@@ -35,7 +35,6 @@ public:
     ~MainWindow();
 
     void takeScreenshoot();
-    double calculateImageDiff(const QImage &image1, const QImage &image2);
 
 private:
     Ui::MainWindow *ui;
@@ -69,6 +68,7 @@ private:
     void saveScreenshotToDatabase(const QPixmap& screenshot, double similarityPercentage);
     QByteArray calculateImageHash(const QPixmap& screenshot);
     void loadScreenshotsFromDatabase();
+    void loadScreenshotsWorker(QPixmap previousScreenshot, QPixmap currentScreenshot);
 
 private slots:
     void onScreenshotButtonClicked();

@@ -32,7 +32,7 @@ MainWindow::MainWindow(QWidget *parent)
     previousScreenshotTitleLabel->setAlignment(Qt::AlignCenter);
 
 
-    // Используем QGridLayout для размещения элементов
+    // Using QGridLayout to place elements
     layout = new QGridLayout;
     layout->addWidget(currentScreenshotTitleLabel,  0, 0);
     layout->addWidget(currentScreenshotLabel,       1, 0);
@@ -50,16 +50,80 @@ MainWindow::MainWindow(QWidget *parent)
     connect(timer, &QTimer::timeout, this, &MainWindow::onTimerTimeout);
     isTimerRunning = false;
 
-    createDatabaseTable();
-    loadScreenshotsFromDatabase();
-
     screenshotWorker.moveToThread(&workerThread);
     connect(this, &MainWindow::startScreenshotComparison, &screenshotWorker, &ScreenshotWorker::processScreenshot);
     connect(&screenshotWorker, &ScreenshotWorker::comparisonResult, this, &MainWindow::onComparisonResult);
     workerThread.start();
+
+    createDatabaseTable();
+    loadScreenshotsFromDatabase();
 }
 
-// Функция включения/выключения таймера
+/*===================================================ScreenShoot======================================================*/
+
+// Slot for the "Take a screenshot" button click
+void MainWindow::onScreenshotButtonClicked()
+{
+    takeScreenshoot();
+}
+
+// Function to calculate the hash of the screenshot
+QByteArray MainWindow::calculateImageHash(const QPixmap &screenshot)
+{
+    if(screenshot.isNull())
+        return 0;
+
+    QByteArray byteArray;
+    QBuffer buffer(&byteArray);
+    buffer.open(QIODevice::WriteOnly);
+    screenshot.save(&buffer, "PNG");
+
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(byteArray);
+
+    return hash.result();
+}
+
+// Function to get a screenshot
+void MainWindow::takeScreenshoot()
+{
+    // Get the screen
+    QScreen *screen = QGuiApplication::primaryScreen();
+
+    if (screen) // If the screen was successfully captured
+    {
+        QPixmap newScreenshot = screen->grabWindow(0);
+        double similarity = 0.0;
+
+        // If we already have a previous screenshot, compare it with the new one
+        if (!previousScreenshotPixmap.isNull())
+        {
+            emit startScreenshotComparison(previousScreenshotPixmap, newScreenshot);
+        }
+        else
+            similarityLabel->setText("Зробіть ще один знімок екрану");
+
+        // Display current and previous screenshots
+        currentScreenshotLabel->setPixmap(newScreenshot.scaled(currentScreenshotLabel->size(), Qt::KeepAspectRatio));
+        previousScreenshotLabel->setPixmap(previousScreenshotPixmap.scaled(previousScreenshotLabel->size(), Qt::KeepAspectRatio));
+
+        previousScreenshotPixmap = newScreenshot;
+
+        saveScreenshotToDatabase(newScreenshot, similarity);
+    }
+    else    // If failed to capture the screen
+        QMessageBox::critical(this, "Помилка", "Не вдалося захопити екран.");
+}
+
+/*===================================================Timer============================================================*/
+
+// Slot for timer timeout
+void MainWindow::onTimerTimeout()
+{
+    takeScreenshoot();
+}
+
+// Function to toggle the timer on/off
 void MainWindow::onTimerToggleClicked()
 {
     if (isTimerRunning)
@@ -76,111 +140,71 @@ void MainWindow::onTimerToggleClicked()
     }
 }
 
-// Функция получения скриншота
-void MainWindow::takeScreenshoot()
+/*===================================================DataBase=========================================================*/
+
+// Function to load screenshots from the database
+void MainWindow::loadScreenshotsFromDatabase()
 {
-    // Получаем экран
-    QScreen *screen = QGuiApplication::primaryScreen();
-
-    if (screen) // Если удалось захватить экран
-    {
-        QPixmap newScreenshot = screen->grabWindow(0);
-        double similarity = 0.0;
-
-        // Если у нас уже есть скриншот - сравниваем его с прошлым
-        if (!previousScreenshotPixmap.isNull())
-        {
-            emit startScreenshotComparison(previousScreenshotPixmap, newScreenshot);
-        }
-        else
-            similarityLabel->setText("Зробіть ще один знімок екрану");
-
-        // Отображаем текущий и предыдущий скриншоты
-        currentScreenshotLabel->setPixmap(newScreenshot.scaled(currentScreenshotLabel->size(), Qt::KeepAspectRatio));
-        previousScreenshotLabel->setPixmap(previousScreenshotPixmap.scaled(previousScreenshotLabel->size(), Qt::KeepAspectRatio));
-
-        previousScreenshotPixmap = newScreenshot;
-
-        saveScreenshotToDatabase(newScreenshot, similarity);
-    }
-    else    // Если не удалось захватить экран
-        QMessageBox::critical(this, "Помилка", "Не вдалося захопити екран.");
-}
-
-// Функция расчета разницы между скриншотами
-double MainWindow::calculateImageDiff(const QImage &image1, const QImage &image2)
-{
-    int width = image1.width();
-    int height = image1.height();
-
-    int pixelCount = width * height;
-    double mse = 0.0;
-
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
-        {
-            QRgb pixel1 = image1.pixel(x, y);
-            QRgb pixel2 = image2.pixel(x, y);
-
-            int r1 = qRed(pixel1);
-            int g1 = qGreen(pixel1);
-            int b1 = qBlue(pixel1);
-
-            int r2 = qRed(pixel2);
-            int g2 = qGreen(pixel2);
-            int b2 = qBlue(pixel2);
-
-            int dr = r1 - r2;
-            int dg = g1 - g2;
-            int db = b1 - b2;
-
-            mse += dr * dr + dg * dg + db * db;
-        }
-    }
-
-    mse /= pixelCount;
-    double similarity = 100.0 * (1.0 - sqrt(mse) / 255.0);
-
-    return similarity;
-}
-
-void MainWindow::onComparisonResult(double similarity)
-{
-    QString similarityText = QString("Схожість: %1%").arg(similarity, 0, 'f', 2);
-    similarityLabel->setText(similarityText);
-}
-
-//
-void MainWindow::createDatabaseTable()
-{
-    QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
-    db.setDatabaseName(QCoreApplication::applicationDirPath() + "/screenshots.db"); // Имя базы данных
-
-    if (!db.open())
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen())
     {
         QMessageBox::critical(this, "Помилка", "Не вдалося відкрити базу даних.");
         return;
     }
 
     QSqlQuery query;
-    // Создаем таблицу screenshots, содержащую столбцы для изображения (BLOB), хэша (TEXT) и процента сходства (REAL)
-    QString createTableQuery = "CREATE TABLE IF NOT EXISTS screenshots ("
-                               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                               "image BLOB NOT NULL,"
-                               "hash TEXT NOT NULL,"
-                               "similarity_percentage REAL NOT NULL)";
-    if (!query.exec(createTableQuery))
+    query.prepare("SELECT image FROM screenshots ORDER BY id DESC LIMIT 2");
+    if (!query.exec())
     {
-        QMessageBox::critical(this, "Помилка", "Не вдалося створити таблицю в базі даних.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося виконати запит до бази даних.");
         return;
     }
 
-    db.close();
+    QPixmap previousScreenshot;
+    QPixmap currentScreenshot;
 
-    qDebug() << "Путь до бази даних:" << db.databaseName();
+    int screenshotCount = 0;
+    while (query.next())
+    {
+        QByteArray imageByteArray = query.value(0).toByteArray();
+        QPixmap screenshot;
+        screenshot.loadFromData(imageByteArray, "PNG");
+
+        // Remember the last two screenshots
+        if (screenshotCount == 0)
+        {
+            currentScreenshot = screenshot;
+            currentScreenshotLabel->setPixmap(currentScreenshot.scaled(currentScreenshotLabel->size(), Qt::KeepAspectRatio));
+        }
+        else if (screenshotCount == 1)
+        {
+            previousScreenshot = screenshot;
+            previousScreenshotLabel->setPixmap(previousScreenshot.scaled(previousScreenshotLabel->size(), Qt::KeepAspectRatio));
+        }
+
+        screenshotCount++;
+    }
+
+    // Display the similarity percentage of the current screenshot
+    if (screenshotCount == 1)
+    {
+        similarityLabel->setText("Прошлого скріншота поки що немає");
+    }
+    else if (screenshotCount == 2)
+    {
+        // Perform similarity calculation in a separate thread
+        loadScreenshotsWorker(previousScreenshot, currentScreenshot);
+    }
 }
 
+// Difference calculation function for the database
+void MainWindow::loadScreenshotsWorker(QPixmap previousScreenshot, QPixmap currentScreenshot)
+{
+    // Call the affinity calculation on the worker thread
+    emit startScreenshotComparison(previousScreenshot, currentScreenshot);
+}
+
+// Function to save the screenshot to the database
 void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double similarityPercentage)
 {
     if (screenshot.isNull())
@@ -213,7 +237,7 @@ void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double simi
     }
     else
     {
-        // Удаляем старые записи, чтобы оставить только два последних скриншота
+        // Remove old records, leaving only the last two screenshots
         query.prepare("DELETE FROM screenshots WHERE id NOT IN (SELECT id FROM screenshots ORDER BY id DESC LIMIT 2)");
         if (!query.exec())
         {
@@ -222,90 +246,46 @@ void MainWindow::saveScreenshotToDatabase(const QPixmap &screenshot, double simi
     }
 }
 
-QByteArray MainWindow::calculateImageHash(const QPixmap &screenshot)
+// Function to create the database table
+void MainWindow::createDatabaseTable()
 {
-    if(screenshot.isNull())
-        return 0;
+    QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
+    db.setDatabaseName(QCoreApplication::applicationDirPath() + "/screenshots.db"); // Database name
 
-    QByteArray byteArray;
-    QBuffer buffer(&byteArray);
-    buffer.open(QIODevice::WriteOnly);
-    screenshot.save(&buffer, "PNG");
-
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    hash.addData(byteArray);
-
-    return hash.result();
-}
-
-void MainWindow::loadScreenshotsFromDatabase()
-{
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen())
+    if (!db.open())
     {
         QMessageBox::critical(this, "Помилка", "Не вдалося відкрити базу даних.");
         return;
     }
 
     QSqlQuery query;
-    query.prepare("SELECT image FROM screenshots ORDER BY id DESC LIMIT 2");
-    if (!query.exec())
+    // Create the screenshots table containing columns for image (BLOB), hash (TEXT), and similarity percentage (REAL)
+    QString createTableQuery = "CREATE TABLE IF NOT EXISTS screenshots ("
+                               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                               "image BLOB NOT NULL,"
+                               "hash TEXT NOT NULL,"
+                               "similarity_percentage REAL NOT NULL)";
+    if (!query.exec(createTableQuery))
     {
-        QMessageBox::critical(this, "Помилка", "Не вдалося виконати запит до бази даних.");
+        QMessageBox::critical(this, "Помилка", "Не вдалося створити таблицю в базі даних.");
         return;
     }
 
-    QPixmap previousScreenshot;
-    QPixmap currentScreenshot;
+    db.close();
 
-    int screenshotCount = 0;
-    while (query.next())
-    {
-        QByteArray imageByteArray = query.value(0).toByteArray();
-        QPixmap screenshot;
-        screenshot.loadFromData(imageByteArray, "PNG");
-
-        // Запоминаем два последних скриншота
-        if (screenshotCount == 0)
-        {
-            currentScreenshot = screenshot;
-            currentScreenshotLabel->setPixmap(currentScreenshot.scaled(currentScreenshotLabel->size(), Qt::KeepAspectRatio));
-        }
-        else if (screenshotCount == 1)
-        {
-            previousScreenshot = screenshot;
-            previousScreenshotLabel->setPixmap(previousScreenshot.scaled(previousScreenshotLabel->size(), Qt::KeepAspectRatio));
-        }
-
-        screenshotCount++;
-    }
-
-    // Отображаем процент сходства текущего скриншота
-    if (screenshotCount == 1)
-    {
-        similarityLabel->setText("Прошлого скріншота поки що немає");
-    }
-    else if (screenshotCount == 2)
-    {
-        double similarity = calculateImageDiff(previousScreenshot.toImage(), currentScreenshot.toImage());
-        QString similarityText = QString("Схожість: %1%").arg(similarity, 0, 'f', 2);
-        similarityLabel->setText(similarityText);
-    }
+    qDebug() << "Путь до бази даних:" << db.databaseName();
 }
 
-// Слот нажатия на кнопку "Сделать скриншот"
-void MainWindow::onScreenshotButtonClicked()
+/*===================================================General==========================================================*/
+
+// Function to change the field
+void MainWindow::onComparisonResult(double similarity)
 {
-    takeScreenshoot();
+    QString similarityText = QString("Схожість: %1%").arg(similarity, 0, 'f', 2);
+    similarityLabel->setText(similarityText);
 }
 
-// Слот срабатывания таймера
-void MainWindow::onTimerTimeout()
-{
-    takeScreenshoot();
-}
-
-// Деструктор
+// Destructor
 MainWindow::~MainWindow()
 {
     workerThread.quit();
